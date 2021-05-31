@@ -5,65 +5,106 @@ Created on Sun May 30 07:32:27 2021
 @author: Harivyas
 """
 
-server={"large":1,"xlarge":2,"2xlarge":4,"4xlarge":8,"8xlarge":16,"10xlarge":32}
-#print(server)
-instances={'us-east': {'large': 0.12,'xlarge': 0.23,'2xlarge': 0.45,'4xlarge': 0.774,'8xlarge': 1.4,'10xlarge': 2.82},
+class Node:
+
+	def __init__(self,name,price,cpus):
+		self.name=name
+		self.price=price
+		self.cpus=cpus
+		self.nextNode=self
+		self.multiplier=1
+		self.count=0
+
+def initialProcess(nodeList):
+	for i in range(1,len(nodeList)):
+		multiply = nodeList[i].cpus//nodeList[i-1].cpus
+		result = multiply*nodeList[i-1].price
+		if nodeList[i].price > result:
+			nodeList[i].price = multiply*nodeList[i-1].price
+			nodeList[i].nextNode = nodeList[i-1].nextNode
+			nodeList[i].multiplier = multiply*nodeList[i-1].multiplier
+
+def findCostForcpus(nodeList,total_cpus):
+	nn = len(nodeList)-1
+	while total_cpus > 0 and nn >=0:
+		if total_cpus >= nodeList[nn].cpus:
+			total_cpus = total_cpus - nodeList[nn].cpus
+			nodeList[nn].nextNode.count = nodeList[nn].nextNode.count + nodeList[nn].multiplier
+		else:
+			nn = nn-1
+	if total_cpus > 0:  #if total_cpus is less than minimum core available
+		total_cpus = total_cpus - nodeList[0].cpus
+		nodeList[0].nextNode.count = nodeList[0].nextNode.count + nodeList[0].multiplier
+
+def findcpusForCost(nodeList,total_cost):
+	nn = len(nodeList)-1
+	while total_cost > 0 and nn >=0 :
+		if total_cost >= nodeList[nn].price:
+			total_cost = total_cost - nodeList[nn].price
+			nodeList[nn].nextNode.count = nodeList[nn].nextNode.count + nodeList[nn].multiplier
+		else:
+			nn = nn-1    	                
+
+def parseDict(instances,server_name):
+        server = instances[server_name]
+        nodeList = []
+        mul = 1
+        for j in ('large','xlarge','2xlarge','4xlarge','8xlarge','10xlarge'):
+                result = server.get(j,-1)
+                if result != -1:
+                        node = Node(j,result,mul)
+                        nodeList.append(node)
+                mul = mul * 2
+        return nodeList
+
+def multiplyCost(nodeList,hours):
+	for node in nodeList:
+		node.price = float(node.price * hours)
+
+def findTotalCost(nodeList):
+	totalCost=0
+	for node in nodeList:
+		if node.count > 0:
+			totalCost = totalCost + (node.price * node.count)
+	return totalCost	
+	
+def get_costs(instances,hours,cpus,price):
+	allNodes = []
+	for server in instances:
+		nodeList = parseDict(instances,server)
+		initialProcess(nodeList)
+		if cpus != 0 and price == 0.0:
+			multiplyCost(nodeList,hours)
+			findCostForcpus(nodeList,cpus)
+			totalCost=findTotalCost(nodeList)
+		elif cpus == 0 and price != 0.0:
+			multiplyCost(nodeList,hours)
+			findcpusForCost(nodeList,price)
+			totalCost=findTotalCost(nodeList)
+		elif cpus !=0 and price !=0.0:
+			multiplyCost(nodeList,hours)
+			findCostForcpus(nodeList,cpus)
+			totalCost=findTotalCost(nodeList) 
+			if totalCost>price:
+				continue
+		else:
+			continue  	
+		newNode = {}	
+		newNode["region"]=server
+		newNode["total_cost"]="$"+"{0:.2f}".format(totalCost)
+		newNode["servers"] = []
+		for node in nodeList:
+			if node.count > 0:
+				tup = node.name, node.count
+				newNode["servers"].append(tup)
+		allNodes.append(newNode)
+		allNodes.sort(key=lambda x: x["total_cost"])
+	print (allNodes)
+
+if __name__ == "__main__":
+	instances={'us-east': {'large': 0.12,'xlarge': 0.23,'2xlarge': 0.45,'4xlarge': 0.774,'8xlarge': 1.4,'10xlarge': 2.82},
             'us-west': {'large': 0.14,'2xlarge': 0.413,'4xlarge': 0.89,'8xlarge': 1.3,'10xlarge': 2.97}}
-
-#print(instances)
-output_list=[]
-def get_costs(instances, hours, cpus, price):
-    if(price == None):
-        get_price(instances,hours,cpus)
-    if(cpus == None):
-        get_cpus(instances,hours,price)
-def print_output(region,cost,servers):
-    output={}
-    output["region"]=region
-    output["total_cost"] = '$'+str(cost)
-    output["servers"]=servers[::-1]
-    output_list.append(output)
-#Alice would like to request for servers with minimum 135 CPUs for 24 hours.
-def get_price(instances,hours,cpus):
-    temp_cpu=cpus
-    for region,servers in instances.items():
-        cpus=temp_cpu
-        total=0
-        l1=list(server.keys())
-        l2=list(server.values())
-        server_list=[]
-        for i in range(len(l1)-1,-1,-1):
-            if(cpus<=0):
-                break
-            nos_cpus = (cpus//server[l1[i]])
-            if(nos_cpus!=0):
-                server_list.append((l1[i],nos_cpus))
-            total+=(nos_cpus*l2[i])
-            cpus%=server[l1[i]]
-        
-        print_output(region,total*hours,server_list)
-#Bob would like to request as many possible servers for $38 for 10 hours.        
-def get_cpus(instances,hours,price):
-    for region,servers in instances.items():
-        priceperhour=price/hours
-        total=0
-        l1=list(server.keys())
-        l2=list(server.values())
-        server_list=[]
-        for i in range(len(l1)-1,-1,-1):
-            if(priceperhour<=0):
-                break
-            final_price = (int)(priceperhour//l2[i])
-            if(final_price!=0):
-                server_list.append((l1[i],final_price))
-            total+=(final_price*l2[i])
-            priceperhour%=l2[i]
-        
-        print_output(region,total*hours,server_list)        
-
-#Example1
-#get_costs(instances,24,135,None)
-#Example2
-#get_costs(instances,10,None,38)
-
-print(output_list)             
+	hours = input("Hours:")
+	cpus = input("Cpus:")
+	price = float(input("Price:"))
+	get_costs(instances,hours,cpus,price)
